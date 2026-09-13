@@ -1,6 +1,7 @@
 package ai.rever.boss.components.events
 
 import ai.rever.boss.keymap.KeymapSettingsManager
+import ai.rever.boss.keymap.ShortcutReleaseTracker
 import ai.rever.boss.keymap.handler.KeymapMatcher
 import ai.rever.boss.keymap.model.ShortcutContext
 import androidx.compose.foundation.layout.Box
@@ -58,32 +59,52 @@ fun Modifier.interceptKeyboardShortcuts(
     val settings by KeymapSettingsManager.currentSettings.collectAsState()
     val matcher = remember(settings) { KeymapMatcher(settings) }
     val coroutineScope = rememberCoroutineScope()
+    val pendingShortcuts = remember { ShortcutReleaseTracker<Long, KeyboardEvent>() }
 
     return this.onPreviewKeyEvent { keyEvent ->
-        // Only handle key down events
-        if (keyEvent.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+        when (keyEvent.type) {
+            KeyEventType.KeyDown -> {
+                // A non-modifier key that is not the repeated primary key cancels the current
+                // gesture. This prevents a key-up delivered after an intervening gesture from
+                // firing a stale shortcut.
+                if (keyEvent.key !in MODIFIER_ONLY_KEYS && !pendingShortcuts.isPending(keyEvent.key.keyCode)) {
+                    pendingShortcuts.clear()
+                }
 
-        // Skip modifier-only keys
-        if (keyEvent.key in MODIFIER_ONLY_KEYS) return@onPreviewKeyEvent false
+                // Skip modifier-only keys; they can cancel a pending gesture on release, but
+                // never match a shortcut on their own.
+                if (keyEvent.key in MODIFIER_ONLY_KEYS) return@onPreviewKeyEvent false
 
-        // Check if this key combo matches any shortcut
-        val binding = matcher.match(keyEvent, context)
+                val binding = matcher.match(keyEvent, context)
+                if (binding == null) return@onPreviewKeyEvent false
 
-        if (binding != null) {
-            // Emit to KeyboardEventBus for action execution
-            coroutineScope.launch {
-                KeyboardEventBus.emit(
+                val pendingEvent =
                     KeyboardEvent(
+                        // Keep the matching key-down event so handlers still see the original
+                        // modifiers when the event is emitted after key-up.
                         keyEvent = keyEvent,
                         source = source,
                         context = context,
                         sourceWindowId = windowId,
-                    ),
-                )
+                    )
+                pendingShortcuts.arm(keyEvent.key.keyCode, pendingEvent)
+                true // Consume the key-down, including auto-repeat, until the primary key-up.
             }
-            true // Consume the event - don't let wrapped component handle it
-        } else {
-            false // Let wrapped component handle regular input
+
+            KeyEventType.KeyUp -> {
+                if (keyEvent.key in MODIFIER_ONLY_KEYS) {
+                    // Releasing a modifier before the primary key cancels the chord. It must not
+                    // accidentally invoke the pending action.
+                    pendingShortcuts.clear()
+                    return@onPreviewKeyEvent false
+                }
+
+                val pendingEvent = pendingShortcuts.release(keyEvent.key.keyCode) ?: return@onPreviewKeyEvent false
+                coroutineScope.launch { KeyboardEventBus.emit(pendingEvent) }
+                true // Consume the primary key-up after dispatching the pending shortcut.
+            }
+
+            else -> false
         }
     }
 }
