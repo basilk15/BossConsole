@@ -341,13 +341,14 @@ rating.openapi(getPluginRatingsRoute, async (ctx) => {
     // A service-role client has no auth.uid(), so resolve the optional session
     // before applying the same storefront visibility rule as browse/detail.
     const viewer = await getOptionalViewer(supabase, ctx.req.header('Authorization'))
+    // Missing responses depend on the viewer too; partition cached 404s.
+    ctx.header("Vary", "Authorization", { append: true })
+    ctx.header("Cache-Control", viewer ? "private, no-store" : "public, max-age=60")
+
     const plugin = await getPlugin(supabase, pluginId, viewer)
     if (!plugin) {
       return ctx.json({ error: 'Plugin not found' }, 404)
     }
-
-    ctx.header("Vary", "Authorization", { append: true })
-    ctx.header("Cache-Control", viewer ? "private, no-store" : "public, max-age=60")
 
     // Get ratings
     const result = await getPluginRatings(supabase, plugin.id, page, pageSize)

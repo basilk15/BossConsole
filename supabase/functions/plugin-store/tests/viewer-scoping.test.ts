@@ -274,3 +274,35 @@ Deno.test("viewer-scoped GETs preserve CORS Vary and partition anonymous cache e
     assertEquals(response.headers.get("vary"), "Origin, Authorization")
   }
 })
+
+Deno.test("missing detail and ratings partition anonymous and signed-in cache entries", async () => {
+  const { OpenAPIHono } = await import("@hono/zod-openapi")
+  const { default: browse } = await import("../routes/browse.ts")
+  const { default: rating } = await import("../routes/rating.ts")
+  const { client } = stub({
+    get_plugin_with_stats: { data: [], error: null },
+    get_plugin_with_stats_for_viewer: { data: [], error: null },
+  })
+  Object.assign(client, { auth: {
+    getUser: () => Promise.resolve({ data: { user: { id: VIEWER } }, error: null }),
+  } })
+  const app = new OpenAPIHono()
+  app.use("*", async (ctx, next) => {
+    ctx.set("supabase" as never, client as never)
+    ctx.header("Vary", "Origin")
+    await next()
+  })
+  app.route("/", rating)
+  app.route("/", browse)
+  for (const path of ["/org.example.plugin", "/org.example.plugin/ratings"]) {
+    for (const signedIn of [false, true]) {
+      const response = await app.request(path, {
+        headers: signedIn ? { Authorization: "Bearer session-token" } : {},
+      })
+      assertEquals(response.status, 404)
+      assertEquals(response.headers.get("vary"), "Origin, Authorization")
+      assertEquals(response.headers.get("cache-control"),
+        signedIn ? "private, no-store" : "public, max-age=60")
+    }
+  }
+})

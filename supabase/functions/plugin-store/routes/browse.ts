@@ -210,6 +210,10 @@ browse.openapi(getPluginRoute, async (ctx) => {
     const { pluginId } = ctx.req.valid('param')
     const viewer = await getOptionalViewer(supabase, ctx.req.header("Authorization"))
 
+    // Missing responses depend on the viewer too; partition cached 404s.
+    ctx.header("Vary", "Authorization", { append: true })
+    ctx.header("Cache-Control", viewer ? "private, no-store" : "public, max-age=60")
+
     const plugin = await getPlugin(supabase, pluginId, viewer)
     
     if (!plugin) {
@@ -218,11 +222,6 @@ browse.openapi(getPluginRoute, async (ctx) => {
 
     // Get all versions
     const versions = await getPluginVersions(supabase, pluginId, viewer)
-
-    // Detail responses vary by the authenticated viewer. Keep a shared cache
-    // from replaying one organisation's plugin metadata to another reader.
-    ctx.header("Vary", "Authorization", { append: true })
-    ctx.header("Cache-Control", viewer ? "private, no-store" : "public, max-age=60")
 
     return ctx.json({
       id: plugin.id,
