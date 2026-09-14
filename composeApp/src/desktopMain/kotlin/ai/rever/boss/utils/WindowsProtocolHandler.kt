@@ -11,13 +11,13 @@ import java.util.concurrent.TimeUnit
 private val logger = BossLogger.forComponent("WindowsProtocolHandler")
 private val isWindows = System.getProperty("os.name").lowercase().contains("windows")
 
-/** Root of the per-user protocol registration this file owns. */
-private const val PROTOCOL_KEY = """HKEY_CURRENT_USER\Software\Classes\boss"""
+/** Root of the per-user protocol registration shared with the generated import script. */
+internal const val PROTOCOL_KEY = """HKEY_CURRENT_USER\Software\Classes\boss"""
 
 /** The `shell\open\command` value under it — where the launch command lives. */
 private const val PROTOCOL_COMMAND_KEY = PROTOCOL_KEY + """\shell\open\command"""
 
-/** A wedged `reg.exe` must not hang the uninstall hook. */
+/** A wedged `reg.exe` must not hang startup or the uninstall hook. */
 private const val REG_TIMEOUT_SECONDS = 5L
 
 /**
@@ -142,6 +142,9 @@ object WindowsProtocolHandler {
             val script = WindowsProtocolRegistryScript.buildScript(appPath)
             scriptFile =
                 File.createTempFile("boss-protocol", ".reg").apply {
+                    // destroyForcibly() is asynchronous, so the child may still hold the
+                    // handle when the best-effort finally delete runs on Windows.
+                    deleteOnExit()
                     // `reg import` expects a Unicode .reg file. Without the BOM, it can
                     // misread an otherwise valid path as ANSI instead of rejecting it.
                     writeBytes(
@@ -156,7 +159,7 @@ object WindowsProtocolHandler {
                 logger.warn(
                     LogCategory.SYSTEM,
                     "Could not import the boss:// protocol registration",
-                    mapOf("output" to result?.output?.trim().orEmpty()),
+                    mapOf("output" to WindowsProtocolCleanup.maskUserPath(result?.output?.trim().orEmpty())),
                 )
             }
         } catch (e: IOException) {
@@ -360,7 +363,10 @@ private fun runReg(vararg args: String): RegResult? {
             logger.warn(
                 LogCategory.SYSTEM,
                 "reg.exe timed out",
-                mapOf("args" to args.joinToString(" "), "timeoutSeconds" to REG_TIMEOUT_SECONDS),
+                mapOf(
+                    "args" to WindowsProtocolCleanup.maskUserPath(args.joinToString(" ")),
+                    "timeoutSeconds" to REG_TIMEOUT_SECONDS,
+                ),
             )
             null
         }
@@ -451,7 +457,7 @@ private fun deleteProtocolKey(): WindowsProtocolHandler.UnregisterOutcome {
             logger.warn(
                 LogCategory.SYSTEM,
                 "Failed to remove boss:// protocol registration",
-                mapOf("key" to PROTOCOL_KEY, "output" to result.output.trim()),
+                mapOf("key" to PROTOCOL_KEY, "output" to WindowsProtocolCleanup.maskUserPath(result.output.trim())),
             )
             WindowsProtocolHandler.UnregisterOutcome.FAILED
         }

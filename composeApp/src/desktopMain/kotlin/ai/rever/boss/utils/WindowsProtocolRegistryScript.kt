@@ -1,5 +1,7 @@
 package ai.rever.boss.utils
 
+import ai.rever.boss.filetypes.WindowsRegistryScript
+
 /**
  * Builds the small `.reg` file used to register the `boss:` URL scheme.
  *
@@ -9,14 +11,11 @@ package ai.rever.boss.utils
  * command-line parser, making the value that Explorer executes explicit and stable.
  */
 internal object WindowsProtocolRegistryScript {
-    private const val HEADER = "Windows Registry Editor Version 5.00"
-    private const val PROTOCOL_KEY = "HKEY_CURRENT_USER\\Software\\Classes\\boss"
-
     /** The complete registry-import script for the current BOSS executable. */
     fun buildScript(appPath: String): String {
-        val executable = regEscape(appPath)
+        val executable = WindowsRegistryScript.regEscape(appPath)
         return buildString {
-            appendLine(HEADER)
+            appendLine(WindowsRegistryScript.HEADER)
             appendLine()
 
             appendLine("[$PROTOCOL_KEY]")
@@ -30,13 +29,10 @@ internal object WindowsProtocolRegistryScript {
 
             appendLine("[$PROTOCOL_KEY\\shell\\open\\command]")
             // Explorer must receive the executable and URL as two separately quoted values.
-            appendLine("@=\"\\\"$executable\\\" \\\"%1\\\"\"")
+            appendLine("@=\"${WindowsRegistryScript.regEscape(commandValue(appPath))}\"")
         }
     }
 
-    /** Escapes a string for a registry-script value. */
-    private fun regEscape(value: String): String =
-        value
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
+    /** The unescaped command Explorer should execute for a `boss://` URL. */
+    internal fun commandValue(appPath: String): String = "\"$appPath\" \"%1\""
 }

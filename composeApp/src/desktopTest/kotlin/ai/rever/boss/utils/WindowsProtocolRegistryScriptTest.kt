@@ -1,6 +1,7 @@
 package ai.rever.boss.utils
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -14,9 +15,23 @@ class WindowsProtocolRegistryScriptTest {
     fun `script identifies itself as a registry import file`() {
         val script = WindowsProtocolRegistryScript.buildScript(exe)
 
-        assertTrue(script.startsWith("Windows Registry Editor Version 5.00"))
-        assertTrue(script.contains("[HKEY_CURRENT_USER\\Software\\Classes\\boss]"))
-        assertTrue(script.contains("\"URL Protocol\"=\"\""))
+        assertTrue(
+            script.startsWith("Windows Registry Editor Version 5.00"),
+            "the script is missing the registry-import header",
+        )
+        assertTrue(
+            script.contains("[$PROTOCOL_KEY]"),
+            "the script writes a different protocol root than cleanup removes",
+        )
+        assertTrue(script.contains("\"URL Protocol\"=\"\""), "the URL Protocol marker is missing")
+    }
+
+    @Test
+    fun `command value round trips through cleanup executable parser`() {
+        assertEquals(
+            exe,
+            WindowsProtocolCleanup.extractExecutablePath(WindowsProtocolRegistryScript.commandValue(exe)),
+        )
     }
 
     @Test
@@ -33,7 +48,13 @@ class WindowsProtocolRegistryScriptTest {
     fun `icon and command escape registry special characters`() {
         val script = WindowsProtocolRegistryScript.buildScript("""C:\A"quoted"\BOSS.exe""")
 
-        assertTrue(script.contains("""@="C:\\A\"quoted\"\\BOSS.exe,0"""))
-        assertTrue(script.contains("""@="\"C:\\A\"quoted\"\\BOSS.exe\" \"%1\""""))
+        assertTrue(
+            script.contains("""@="C:\\A\"quoted\"\\BOSS.exe,0"""),
+            "the icon path is not escaped for a registry script",
+        )
+        assertTrue(
+            script.contains("""@="\"C:\\A\"quoted\"\\BOSS.exe\" \"%1\""""),
+            "the shell command is not escaped for a registry script",
+        )
     }
 }
