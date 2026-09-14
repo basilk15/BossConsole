@@ -5,6 +5,7 @@ import ai.rever.boss.utils.logging.LogCategory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.awt.Frame
 import java.awt.Window
 import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
@@ -46,6 +47,9 @@ internal fun resolveActionableWindowIdFrom(
     focusFlowWindowId: String?,
     registeredWindowIds: Collection<String>,
 ): String? = lastFocusedWindowId ?: focusFlowWindowId ?: registeredWindowIds.firstOrNull()
+
+/** Clears only AWT's iconified bit, preserving a window's maximized state. */
+internal fun restoreIconifiedFrameState(extendedState: Int): Int = extendedState and Frame.ICONIFIED.inv()
 
 internal fun hasFullscreenSignal(
     nativeStateAvailable: Boolean,
@@ -541,16 +545,7 @@ actual object WindowFocusManager {
         val window = windows[windowId]
         return if (window != null) {
             SwingUtilities.invokeLater {
-                // Make window visible if minimized
-                if (!window.isVisible) {
-                    window.isVisible = true
-                }
-
-                // Bring to front
-                window.toFront()
-
-                // Request focus
-                window.requestFocus()
+                focusWindowOnEdt(window)
             }
             true
         } else {
@@ -564,17 +559,20 @@ actual object WindowFocusManager {
     actual fun bringToFront() {
         mainWindow?.let { window ->
             SwingUtilities.invokeLater {
-                // Make window visible if minimized
-                if (!window.isVisible) {
-                    window.isVisible = true
-                }
-
-                // Bring to front
-                window.toFront()
-
-                // Request focus
-                window.requestFocus()
+                focusWindowOnEdt(window)
             }
         }
+    }
+
+    /** Restores iconified frames before the visibility/focus calls used by all window routing. */
+    private fun focusWindowOnEdt(window: Window) {
+        if (window is Frame && window.extendedState and Frame.ICONIFIED != 0) {
+            window.extendedState = restoreIconifiedFrameState(window.extendedState)
+        }
+        if (!window.isVisible) {
+            window.isVisible = true
+        }
+        window.toFront()
+        window.requestFocus()
     }
 }

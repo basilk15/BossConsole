@@ -1,5 +1,6 @@
 package ai.rever.boss.utils
 
+import java.awt.Frame
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -207,6 +208,16 @@ class WindowFocusManagerTest {
                 registeredWindowIds = emptyList(),
             ),
         )
+    }
+
+    @Test
+    fun `restoring an iconified frame preserves maximized state`() {
+        assertEquals(Frame.NORMAL, restoreIconifiedFrameState(Frame.ICONIFIED))
+        assertEquals(
+            Frame.MAXIMIZED_BOTH,
+            restoreIconifiedFrameState(Frame.MAXIMIZED_BOTH or Frame.ICONIFIED),
+        )
+        assertEquals(Frame.MAXIMIZED_BOTH, restoreIconifiedFrameState(Frame.MAXIMIZED_BOTH))
     }
 
     @Test
