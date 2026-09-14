@@ -7,7 +7,7 @@
 -- collapses the two will fail exactly two tests here.
 
 begin;
-select plan(21);
+select plan(25);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures: two organisations, an author, a member of each, and an outsider.
@@ -179,6 +179,26 @@ select is(
         'pgtap.piv.unlisted', null)),
     0,
     'the viewer-scoped install lookup does not make an unlisted link public'
+);
+
+select is(
+    (select count(*)::int from public.get_plugin_install_info_for_viewer('pgtap.piv.public', null)),
+    1, 'anonymous readers can download a public published plugin through the lookup'
+);
+select is(
+    (select required_permissions from public.get_plugin_install_info_for_viewer('pgtap.piv.public', null)),
+    '{}'::text[], 'the lookup returns an empty permission array for a baseline plugin'
+);
+update public.plugins set required_permissions = ARRAY['plugin.read'] where plugin_id = 'pgtap.piv.org';
+select is(
+    (select required_permissions from public.get_plugin_install_info_for_viewer(
+        'pgtap.piv.org', '30000000-0000-0000-0000-000000000002')),
+    ARRAY['plugin.read']::text[], 'the lookup preserves required permissions for the route gate'
+);
+select is(
+    (select count(*)::int from public.get_plugin_install_info_for_viewer(
+        'pgtap.piv.public.draft', '30000000-0000-0000-0000-000000000001')),
+    1, 'the lookup preserves the install predicate author access to drafts'
 );
 
 -- ===========================================================================

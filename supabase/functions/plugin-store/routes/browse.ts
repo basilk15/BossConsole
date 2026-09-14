@@ -63,6 +63,7 @@ browse.openapi(listRoute, async (ctx) => {
     // PRIVATE when the answer depends on who asked. The same URL now returns different rows per
     // reader, so a shared cache holding one reader's copy would serve somebody else's
     // organisation plugins to the next caller. The other follow-up 20260803000000 asked for.
+    ctx.header("Vary", "Authorization", { append: true })
     ctx.header("Cache-Control", viewer ? "private, no-store" : "public, max-age=60")
 
     return ctx.json({
@@ -146,6 +147,8 @@ browse.openapi(searchRoute, async (ctx) => {
       viewer
     )
 
+    ctx.header("Cache-Control", "private, no-store")
+
     return ctx.json({
       plugins: result.plugins,
       totalCount: result.totalCount,
@@ -218,6 +221,7 @@ browse.openapi(getPluginRoute, async (ctx) => {
 
     // Detail responses vary by the authenticated viewer. Keep a shared cache
     // from replaying one organisation's plugin metadata to another reader.
+    ctx.header("Vary", "Authorization", { append: true })
     ctx.header("Cache-Control", viewer ? "private, no-store" : "public, max-age=60")
 
     return ctx.json({

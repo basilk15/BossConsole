@@ -228,9 +228,9 @@ export async function getPluginForDownload(
 
   if (error) {
     console.error('Error getting plugin install info:', error)
-    // This is an authorization gate. A database failure must not turn into a
-    // download, and 404 keeps the plugin-existence response indistinguishable.
-    return null
+    // Deny without returning any metadata, but keep transport failures retryable.
+    // The same error applies to every plugin id and reveals no existence signal.
+    throw new Error('Plugin install lookup unavailable')
   }
 
   const row = data?.[0]

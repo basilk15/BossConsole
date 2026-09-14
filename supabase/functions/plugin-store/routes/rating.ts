@@ -346,6 +346,7 @@ rating.openapi(getPluginRatingsRoute, async (ctx) => {
       return ctx.json({ error: 'Plugin not found' }, 404)
     }
 
+    ctx.header("Vary", "Authorization", { append: true })
     ctx.header("Cache-Control", viewer ? "private, no-store" : "public, max-age=60")
 
     // Get ratings

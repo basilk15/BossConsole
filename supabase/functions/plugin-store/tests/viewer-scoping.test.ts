@@ -8,7 +8,7 @@
  * Run: deno test --allow-all tests/viewer-scoping.test.ts
  */
 
-import { assert, assertEquals } from "@std/assert"
+import { assert, assertEquals, assertRejects } from "@std/assert"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import {
   getPlugin,
@@ -174,7 +174,11 @@ Deno.test("download lookup fails closed when its authorization RPC errors", asyn
     },
   })
 
-  assertEquals(await getPluginForDownload(client, "org.example.plugin", VIEWER), null)
+  await assertRejects(
+    () => getPluginForDownload(client, "org.example.plugin", VIEWER),
+    Error,
+    "Plugin install lookup unavailable",
+  )
 })
 
 Deno.test("optional viewer resolution is quiet and never treats an API key as a session", async () => {
@@ -236,4 +240,37 @@ Deno.test("browse and rating routes pass the optional viewer to detail lookups",
       rating.includes("getPlugin(supabase, pluginId, viewer)"),
     "public ratings use the same viewer-aware plugin lookup",
   )
+})
+
+Deno.test("viewer-scoped GETs preserve CORS Vary and partition anonymous cache entries", async () => {
+  const { OpenAPIHono } = await import("@hono/zod-openapi")
+  const { default: browse } = await import("../routes/browse.ts")
+  const { default: rating } = await import("../routes/rating.ts")
+  const { client } = stub({
+    search_plugins: { data: [{ plugins: [], total_count: 0 }], error: null },
+    get_plugin_with_stats: { data: [detailRow], error: null },
+    get_plugin_versions: { data: [], error: null },
+  })
+  const query = {
+    select() { return this }, eq() { return this }, order() { return this },
+    range() { return this },
+    then(resolve: (value: unknown) => unknown) {
+      return Promise.resolve({ data: [], count: 0, error: null }).then(resolve)
+    },
+  }
+  Object.assign(client, { from: () => query })
+  const app = new OpenAPIHono()
+  app.use("*", async (ctx, next) => {
+    ctx.set("supabase" as never, client as never)
+    ctx.header("Vary", "Origin")
+    await next()
+  })
+  app.route("/", rating)
+  app.route("/", browse)
+  for (const path of ["/list", "/org.example.plugin", "/org.example.plugin/ratings"]) {
+    const response = await app.request(path)
+    assertEquals(response.status, 200)
+    assertEquals(response.headers.get("cache-control"), "public, max-age=60")
+    assertEquals(response.headers.get("vary"), "Origin, Authorization")
+  }
 })
